@@ -20,7 +20,7 @@
 
 #define PORT 19934
 #define IP_ADDRESS "127.0.0.1"
-#define PACKET_SIZE 50
+#define PACKET_SIZE 200
 
 using namespace std;
 
@@ -66,7 +66,6 @@ std::string Utf8ToMultiByte(std::string utf8_str)
     delete[] pszOut;
     return resultString;
 }
-
 
 std::string MultiByteToUtf8(std::string multibyte_str)
 {
@@ -122,6 +121,11 @@ unsigned WINAPI WorkThread(void* Args)
         {
             cout << "클라이언트 연결 종료 : " << CS << '\n';
 
+            sql::Statement* pstmt;
+            pstmt = con->createStatement();
+            pstmt->executeUpdate("UPDATE UserTable SET isLogin = false WHERE isLogin = true");
+            delete pstmt;
+
             closesocket(CS);
             EnterCriticalSection(&ServerCS);
             vSocketList.erase(find(vSocketList.begin(), vSocketList.end(), CS));
@@ -133,7 +137,7 @@ unsigned WINAPI WorkThread(void* Args)
         string ChatBuffer = Buffer;
 
         pstmt = con->prepareStatement("INSERT INTO ChatTable(`CONTENTS`)VALUES(?)");
-        pstmt->setString(1, MultiByteToUtf8(ChatBuffer));
+        pstmt->setString(1, ChatBuffer);
         pstmt->execute();
         cout << CS << " : " << Utf8ToMultiByte(ChatBuffer) << '\n';
 
@@ -166,7 +170,7 @@ int main()
 {
     driver = get_driver_instance();
     con = driver->connect(server, username, password);
-    con->setSchema("ChattingSheet");
+    con->setSchema("UE4SERVER");
 
     cout << "[채팅 서버 활성화]" << '\n';
 
