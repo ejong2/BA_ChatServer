@@ -19,7 +19,7 @@
 #pragma comment (lib, "mysqlcppconn.lib")
 
 #define PORT 19934
-#define IP_ADDRESS "127.0.0.1"
+#define IP_ADDRESS "172.16.2.84"
 #define PACKET_SIZE 200
 
 using namespace std;
@@ -112,20 +112,47 @@ std::string MultiByteToUtf8(std::string multibyte_str)
 unsigned WINAPI WorkThread(void* Args)
 {
     SOCKET CS = *(SOCKET*)Args;
+
     while (true)
     {
         char Buffer[PACKET_SIZE] = { 0, };
 
         int RecvBytes = recv(CS, Buffer, sizeof(Buffer), 0);
-        if (RecvBytes <= 0)
+
+        cout << "1 : " << Buffer << '\n';
+
+        string strPacket = Buffer;
+
+        cout << "2 : " << Buffer << '\n';
+
+        if (strPacket == "LogoutPacket")
         {
-            cout << "클라이언트 연결 종료 : " << CS << '\n';
+            cout << "받은 패킷 : " << strPacket << '\n';
+
+            //Sleep(100);
+
+            char PlayerNameBuffer[PACKET_SIZE] = { 0, };
+
+            RecvBytes = recv(CS, PlayerNameBuffer, sizeof(PlayerNameBuffer), 0);
+
+            string PlayerName = PlayerNameBuffer;
+
+            cout << "플레이어 이름 : " << PlayerName << '\n';
 
             sql::Statement* pstmt;
             pstmt = con->createStatement();
-            pstmt->executeUpdate("UPDATE UserTable SET isLogin = false WHERE isLogin = true");
+            pstmt->executeUpdate("UPDATE UserTable SET isLogin = false WHERE PlayerName = '" + PlayerName + "'");
             delete pstmt;
 
+            cout << "플레이어 이름 : " << PlayerName << '\n';
+
+        }
+
+
+
+        if (RecvBytes <= 0)
+        {
+            //cout << "클라이언트 연결 종료 : " << CS << '\n';
             closesocket(CS);
             EnterCriticalSection(&ServerCS);
             vSocketList.erase(find(vSocketList.begin(), vSocketList.end(), CS));
@@ -134,7 +161,7 @@ unsigned WINAPI WorkThread(void* Args)
         }
         Buffer[PACKET_SIZE - 1] = '\0';
 
-        string ChatBuffer = Buffer;
+        std::string ChatBuffer = Buffer;
 
         pstmt = con->prepareStatement("INSERT INTO ChatTable(`CONTENTS`)VALUES(?)");
         pstmt->setString(1, ChatBuffer);
