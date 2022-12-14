@@ -19,7 +19,7 @@
 #pragma comment (lib, "mysqlcppconn.lib")
 
 #define PORT 19934
-#define IP_ADDRESS "172.16.2.84"
+#define IP_ADDRESS "127.0.0.1"
 #define PACKET_SIZE 200
 
 using namespace std;
@@ -67,48 +67,6 @@ std::string Utf8ToMultiByte(std::string utf8_str)
     return resultString;
 }
 
-std::string MultiByteToUtf8(std::string multibyte_str)
-{
-    char* pszIn = new char[multibyte_str.length() + 1];
-    strncpy_s(pszIn, multibyte_str.length() + 1, multibyte_str.c_str(), multibyte_str.length());
-
-    std::string resultString;
-
-    int nLenOfUni = 0, nLenOfUTF = 0;
-    wchar_t* uni_wchar = NULL;
-    char* pszOut = NULL;
-
-    // 1. ANSI(multibyte) Length
-    if ((nLenOfUni = MultiByteToWideChar(CP_ACP, 0, pszIn, (int)strlen(pszIn), NULL, 0)) <= 0)
-        return 0;
-
-    uni_wchar = new wchar_t[nLenOfUni + 1];
-    memset(uni_wchar, 0x00, sizeof(wchar_t) * (nLenOfUni + 1));
-
-    // 2. ANSI(multibyte) ---> unicode
-    nLenOfUni = MultiByteToWideChar(CP_ACP, 0, pszIn, (int)strlen(pszIn), uni_wchar, nLenOfUni);
-
-    // 3. utf8 Length
-    if ((nLenOfUTF = WideCharToMultiByte(CP_UTF8, 0, uni_wchar, nLenOfUni, NULL, 0, NULL, NULL)) <= 0)
-    {
-        delete[] uni_wchar;
-        return 0;
-    }
-
-    pszOut = new char[nLenOfUTF + 1];
-    memset(pszOut, 0, sizeof(char) * (nLenOfUTF + 1));
-
-    // 4. unicode ---> utf8
-    nLenOfUTF = WideCharToMultiByte(CP_UTF8, 0, uni_wchar, nLenOfUni, pszOut, nLenOfUTF, NULL, NULL);
-    pszOut[nLenOfUTF] = 0;
-    resultString = pszOut;
-
-    delete[] uni_wchar;
-    delete[] pszOut;
-
-    return resultString;
-}
-
 unsigned WINAPI WorkThread(void* Args)
 {
     SOCKET CS = *(SOCKET*)Args;
@@ -116,79 +74,64 @@ unsigned WINAPI WorkThread(void* Args)
     while (true)
     {
         char Buffer[PACKET_SIZE] = { 0, };
-
         int RecvBytes = recv(CS, Buffer, sizeof(Buffer), 0);
-
-        cout << "1 : " << Buffer << '\n';
 
         string strPacket = Buffer;
 
-        cout << "2 : " << Buffer << '\n';
-
         if (strPacket == "LogoutPacket")
         {
-            cout << "받은 패킷 : " << strPacket << '\n';
-
-            //Sleep(100);
-
             char PlayerNameBuffer[PACKET_SIZE] = { 0, };
-
             RecvBytes = recv(CS, PlayerNameBuffer, sizeof(PlayerNameBuffer), 0);
 
             string PlayerName = PlayerNameBuffer;
-
-            cout << "플레이어 이름 : " << PlayerName << '\n';
 
             sql::Statement* pstmt;
             pstmt = con->createStatement();
             pstmt->executeUpdate("UPDATE UserTable SET isLogin = false WHERE PlayerName = '" + PlayerName + "'");
             delete pstmt;
-
-            cout << "플레이어 이름 : " << PlayerName << '\n';
-
         }
-
-
-
-        if (RecvBytes <= 0)
+        else
         {
-            //cout << "클라이언트 연결 종료 : " << CS << '\n';
-            closesocket(CS);
-            EnterCriticalSection(&ServerCS);
-            vSocketList.erase(find(vSocketList.begin(), vSocketList.end(), CS));
-            LeaveCriticalSection(&ServerCS);
-            break;
-        }
-        Buffer[PACKET_SIZE - 1] = '\0';
-
-        std::string ChatBuffer = Buffer;
-
-        pstmt = con->prepareStatement("INSERT INTO ChatTable(`CONTENTS`)VALUES(?)");
-        pstmt->setString(1, ChatBuffer);
-        pstmt->execute();
-        cout << CS << " : " << Utf8ToMultiByte(ChatBuffer) << '\n';
-
-        EnterCriticalSection(&ServerCS);
-        for (int i = 0; i < vSocketList.size(); i++)
-        {
-            int SendBytes = 0;
-            int TotalSentBytes = 0;
-            do
+            if (RecvBytes <= 0)
             {
-                SendBytes = send(vSocketList[i], &Buffer[TotalSentBytes], sizeof(Buffer) - TotalSentBytes, 0);
-                TotalSentBytes += SendBytes;
-            } while (TotalSentBytes < sizeof(Buffer));
-
-            if (SendBytes <= 0)
-            {
+                cout << "클라이언트 연결 종료 : " << CS << '\n';
                 closesocket(CS);
                 EnterCriticalSection(&ServerCS);
                 vSocketList.erase(find(vSocketList.begin(), vSocketList.end(), CS));
                 LeaveCriticalSection(&ServerCS);
                 break;
             }
+            Buffer[PACKET_SIZE - 1] = '\0';
+
+            std::string ChatBuffer = Buffer;
+
+            pstmt = con->prepareStatement("INSERT INTO ChatTable(`CONTENTS`)VALUES(?)");
+            pstmt->setString(1, ChatBuffer);
+            pstmt->execute();
+            cout << CS << " : " << Utf8ToMultiByte(ChatBuffer) << '\n';
+
+            EnterCriticalSection(&ServerCS);
+            for (int i = 0; i < vSocketList.size(); i++)
+            {
+                int SendBytes = 0;
+                int TotalSentBytes = 0;
+                do
+                {
+                    SendBytes = send(vSocketList[i], &Buffer[TotalSentBytes], sizeof(Buffer) - TotalSentBytes, 0);
+                    TotalSentBytes += SendBytes;
+                } while (TotalSentBytes < sizeof(Buffer));
+
+                if (SendBytes <= 0)
+                {
+                    closesocket(CS);
+                    EnterCriticalSection(&ServerCS);
+                    vSocketList.erase(find(vSocketList.begin(), vSocketList.end(), CS));
+                    LeaveCriticalSection(&ServerCS);
+                    break;
+                }
+            }
+            LeaveCriticalSection(&ServerCS);
         }
-        LeaveCriticalSection(&ServerCS);
     }
     return 0;
 }
